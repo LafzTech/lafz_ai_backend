@@ -1,0 +1,237 @@
+openapi: 3.0.0
+info:
+  title: Ride Booking Actions API
+  description: API schema for AWS Bedrock Agent action group for ride booking operations
+  version: 1.0.0
+
+servers:
+  - url: https://lambda-url-for-ride-booking-actions
+    description: Lambda function URL for ride booking actions
+
+paths:
+  /resolve-location:
+    post:
+      summary: Resolve location text to coordinates and formatted address
+      description: Uses Google Places API to resolve user-provided location text into structured location data
+      operationId: resolveLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - location_text
+                - type
+              properties:
+                location_text:
+                  type: string
+                  description: The location text to resolve (e.g., "Ukkadam Coimbatore", "Gandhipuram")
+                  example: "Ukkadam, Coimbatore"
+                type:
+                  type: string
+                  enum: [pickup, drop]
+                  description: Whether this is a pickup or drop location
+                  example: "pickup"
+      responses:
+        '200':
+          description: Location successfully resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    description: The location type (pickup or drop)
+                  location:
+                    type: string
+                    description: Formatted address
+                  coordinates:
+                    type: object
+                    properties:
+                      lat:
+                        type: number
+                        format: float
+                        description: Latitude
+                      lng:
+                        type: number
+                        format: float
+                        description: Longitude
+                  place_id:
+                    type: string
+                    description: Google Places ID
+                  success:
+                    type: boolean
+                    description: Operation success status
+        '400':
+          description: Bad request - missing or invalid parameters
+        '404':
+          description: Location not found
+
+  /create-ride:
+    post:
+      summary: Create a new ride booking
+      description: Creates a ride booking with pickup/drop locations and phone number
+      operationId: createRide
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone_number
+              properties:
+                phone_number:
+                  type: string
+                  description: Customer phone number (10 digits)
+                  pattern: '^[0-9]{10}$'
+                  example: "1234567890"
+                phone_code:
+                  type: string
+                  description: Country code
+                  default: "+91"
+                  example: "+91"
+      responses:
+        '200':
+          description: Ride created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    description: Operation success status
+                  ride_id:
+                    type: integer
+                    description: Unique ride identifier
+                  message:
+                    type: string
+                    description: Success message
+                  details:
+                    type: object
+                    properties:
+                      pickup:
+                        type: string
+                        description: Pickup location address
+                      drop:
+                        type: string
+                        description: Drop location address
+                      phone:
+                        type: string
+                        description: Customer phone number
+        '400':
+          description: Bad request - missing required data
+
+  /get-ride-status:
+    post:
+      summary: Get the status of an existing ride
+      description: Retrieves current status, driver information, and ETA for a ride
+      operationId: getRideStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ride_id
+              properties:
+                ride_id:
+                  type: string
+                  description: The ride ID to check status for
+                  example: "123456"
+      responses:
+        '200':
+          description: Ride status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ride_id:
+                    type: string
+                    description: Ride identifier
+                  status:
+                    type: string
+                    enum: [pending, driver_assigned, driver_arriving, in_progress, completed, cancelled]
+                    description: Current ride status
+                  driver:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Driver name
+                      phone:
+                        type: string
+                        description: Driver phone number
+                      vehicle_number:
+                        type: string
+                        description: Vehicle registration number
+                    description: Driver information (if assigned)
+                  eta:
+                    type: string
+                    description: Estimated time of arrival
+                    example: "5 minutes"
+        '400':
+          description: Bad request - missing ride ID
+        '404':
+          description: Ride not found
+
+  /cancel-ride:
+    post:
+      summary: Cancel an existing ride
+      description: Cancels a ride booking
+      operationId: cancelRide
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ride_id
+              properties:
+                ride_id:
+                  type: string
+                  description: The ride ID to cancel
+                  example: "123456"
+      responses:
+        '200':
+          description: Ride cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    description: Operation success status
+                  message:
+                    type: string
+                    description: Cancellation confirmation message
+                  ride_id:
+                    type: string
+                    description: Cancelled ride ID
+        '400':
+          description: Bad request - missing ride ID
+        '404':
+          description: Ride not found
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        error_code:
+          type: string
+          description: Error code for programmatic handling
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
