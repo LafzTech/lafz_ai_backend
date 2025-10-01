@@ -105,7 +105,7 @@ Manager says: Go to Step 4 → Confirm ride
 
 Bot: "Ride request sent. Driver will call in 5 minutes."
 
-Exaple conversation flow:
+Example conversation flow:
 human chat: Hello
 AI chat : Hello, i help to auto ride booking, What is your pickup location?
 human chat: ukkaddam coimbatore
@@ -113,6 +113,7 @@ AI chat: What is your drop location?
 human chat: Gamdhiburam
 AI chat: Please give your phone number, Driver will connect soon
 human chat: 1234567890
+
 AI chat : Ride requst sened, Driver call in 5min
 (If accept the ride - Driver)
 AI chat: Driver Name: Raja, Phone number: 3698521470

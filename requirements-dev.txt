@@ -1,0 +1,45 @@
+# Development dependencies
+# -r requirements.txt
+
+# Audio processing (optional for full audio features)
+# Note: These may require system dependencies (ffmpeg, libsndfile)
+# soundfile==0.12.1
+# librosa==0.10.1
+
+# Advanced Redis features (optional)
+# hiredis==2.3.2
+
+# Async Redis (alternative Redis client)
+# aioredis==2.0.1
+
+# Additional data processing (optional)
+# pandas==2.1.4
+
+# Structured logging (optional)
+# structlog==23.2.0
+
+# Advanced security (optional)
+# passlib[bcrypt]==1.7.4
+
+# Testing utilities
+# pytest-mock==3.12.0
+# pytest-cov==4.0.0
+
+# Code quality
+# flake8==7.0.0
+# mypy==1.8.0
+
+# Documentation
+# mkdocs==1.5.3
+# mkdocs-material==9.5.3
+
+# Development utilities
+# watchdog==3.0.0
+# pre-commit==3.6.0
+
+# Performance monitoring (optional)
+# prometheus-client==0.19.0
+
+
+requests==2.31.0
+googlemaps==4.10.0

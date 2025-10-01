@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, Optional
 import requests
 import googlemaps
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger()
@@ -20,12 +20,24 @@ class GooglePlacesService:
     def autocomplete_location(self, input_text: str) -> list:
         """Get location suggestions using Google Places Autocomplete"""
         try:
+            # Add Tamil Nadu to the search query to bias results
+            search_query = f"{input_text}, Tamil Nadu"
+
             predictions = self.gmaps.places_autocomplete(
-                input_text=input_text,
+                input_text=search_query,
                 components={'country': 'IN'},  # Restrict to India
                 types=['establishment', 'geocode']
             )
-            return predictions
+
+            # Filter predictions to only include Tamil Nadu locations
+            filtered_predictions = []
+            for prediction in predictions:
+                description = prediction.get('description', '').lower()
+                # Check if Tamil Nadu is mentioned in the description
+                if 'tamil nadu' in description or 'tn' in description.split():
+                    filtered_predictions.append(prediction)
+
+            return filtered_predictions
 
         except Exception as e:
             logger.error(f"Places autocomplete failed: {str(e)}")
@@ -70,18 +82,22 @@ class GooglePlacesService:
                         'place_id': details['place_id']
                     }
 
-            # Fallback to geocoding if autocomplete fails
-            geocode_result = self.gmaps.geocode(location_text)
+            # Fallback to geocoding with Tamil Nadu bias if autocomplete fails
+            search_query = f"{location_text}, Tamil Nadu"
+            geocode_result = self.gmaps.geocode(search_query)
             if geocode_result:
-                result = geocode_result[0]
-                return {
-                    'address': result['formatted_address'],
-                    'coordinates': {
-                        'lat': result['geometry']['location']['lat'],
-                        'lng': result['geometry']['location']['lng']
-                    },
-                    'place_id': result.get('place_id', '')
-                }
+                for result in geocode_result:
+                    address = result['formatted_address'].lower()
+                    # Ensure the result is from Tamil Nadu
+                    if 'tamil nadu' in address:
+                        return {
+                            'address': result['formatted_address'],
+                            'coordinates': {
+                                'lat': result['geometry']['location']['lat'],
+                                'lng': result['geometry']['location']['lng']
+                            },
+                            'place_id': result.get('place_id', '')
+                        }
 
             return None
 
@@ -95,7 +111,7 @@ class RideBookingAPI:
 
     def __init__(self, base_url: str):
         self.base_url = base_url
-        self.create_endpoint = f"{base_url}/map/admin/create-admin-ride"
+        self.create_endpoint = f"{base_url}/map/ai/create-admin-ride"
         self.cancel_endpoint = f"{base_url}/map/admin/cancel-ride"
         self.status_endpoint = f"{base_url}/map/admin/ride-status"
 
@@ -240,11 +256,13 @@ def lambda_handler(event, context):
             if 'name' in param and 'value' in param:
                 params_dict[param['name']] = param['value']
 
+        session_attributes = event.get('sessionAttributes', {})
         logger.info(f"Action: {action}, API Path: {api_path}, Parameters: {params_dict}")
+        logger.info(f"Session attributes: {session_attributes}")
 
         # Route to appropriate handler based on API path
         if api_path == '/resolve-location':
-            return handle_location_resolution(params_dict, action, api_path)
+            return handle_location_resolution(params_dict, event.get('sessionAttributes', {}), action, api_path)
         elif api_path == '/create-ride':
             return handle_ride_creation(params_dict, event.get('sessionAttributes', {}), action, api_path)
         elif api_path == '/get-ride-status':
@@ -259,7 +277,7 @@ def lambda_handler(event, context):
         return create_error_response(str(e), 'HANDLER_ERROR', action, api_path)
 
 
-def handle_location_resolution(params: Dict, action_group: str = None, api_path: str = '') -> Dict:
+def handle_location_resolution(params: Dict, session_attributes: Dict = None, action_group: str = None, api_path: str = '') -> Dict:
     """Handle location resolution requests"""
     try:
         location_text = params.get('location_text', '').strip()
@@ -288,7 +306,11 @@ def handle_location_resolution(params: Dict, action_group: str = None, api_path:
         }
 
         logger.info(f"Location resolved: {response_body}")
-        return create_success_response(response_body, action_group, api_path)
+
+        # Return response with session attributes to store location data
+        response = create_success_response_with_session(response_body, location_type, location_data, session_attributes or {}, action_group, api_path)
+        logger.info(f"Final response with session: {json.dumps(response)}")
+        return response
 
     except Exception as e:
         logger.error(f"Location resolution error: {str(e)}")
@@ -300,8 +322,28 @@ def handle_ride_creation(params: Dict, session_attributes: Dict, action_group: s
     try:
         # Extract parameters
         phone_number = params.get('phone_number', '').strip()
-        pickup_location = session_attributes.get('pickup_location')
-        drop_location = session_attributes.get('drop_location')
+
+        # Parse session attributes (they are stored as JSON strings)
+        pickup_location = None
+        drop_location = None
+
+        logger.info(f"Session attributes received: {session_attributes}")
+
+        if 'pickup_location' in session_attributes:
+            try:
+                pickup_location = json.loads(session_attributes['pickup_location'])
+                logger.info(f"Parsed pickup location: {pickup_location}")
+            except (json.JSONDecodeError, TypeError):
+                pickup_location = session_attributes['pickup_location']
+                logger.info(f"Using raw pickup location: {pickup_location}")
+
+        if 'drop_location' in session_attributes:
+            try:
+                drop_location = json.loads(session_attributes['drop_location'])
+                logger.info(f"Parsed drop location: {drop_location}")
+            except (json.JSONDecodeError, TypeError):
+                drop_location = session_attributes['drop_location']
+                logger.info(f"Using raw drop location: {drop_location}")
 
         # Validate required data
         missing_fields = []
@@ -428,12 +470,43 @@ def create_success_response(body: Dict, action_group: str = None, api_path: str 
     }
 
 
+def create_success_response_with_session(body: Dict, location_type: str, location_data: Dict, existing_session_attributes: Dict = None, action_group: str = None, api_path: str = '') -> Dict:
+    """Create a successful response for Bedrock Agent with session attributes"""
+    session_key = f"{location_type}_location"
+
+    # Start with existing session attributes, or empty dict
+    session_attributes = existing_session_attributes.copy() if existing_session_attributes else {}
+
+    # Add/update the new location data
+    session_attributes[session_key] = json.dumps({
+        'address': location_data['address'],
+        'coordinates': location_data['coordinates'],
+        'place_id': location_data.get('place_id', '')
+    })
+
+    return {
+        'messageVersion': '1.0',
+        'response': {
+            'actionGroup': action_group or 'safe_safari_action_group',
+            'apiPath': api_path,
+            'httpMethod': 'POST',
+            'httpStatusCode': 200,
+            'responseBody': {
+                'application/json': {
+                    'body': json.dumps(body)
+                }
+            }
+        },
+        'sessionAttributes': session_attributes
+    }
+
+
 def create_error_response(error_message: str, error_code: str, action_group: str = None, api_path: str = '') -> Dict:
     """Create an error response for Bedrock Agent"""
     error_body = {
         'error': error_message,
         'error_code': error_code,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.now(timezone.utc).isoformat()
     }
 
     return {
